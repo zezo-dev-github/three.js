@@ -8,6 +8,7 @@ import WebGLState from './utils/WebGLState.js';
 import WebGLUtils from './utils/WebGLUtils.js';
 import WebGLTextureUtils from './utils/WebGLTextureUtils.js';
 import WebGLExtensions from './utils/WebGLExtensions.js';
+import WebGLCapabilities from './utils/WebGLCapabilities.js';
 
 //
 
@@ -34,6 +35,7 @@ class WebGLBackend extends Backend {
 		this.gl = glContext;
 
 		this.extensions = new WebGLExtensions( this );
+		this.capabilities = new WebGLCapabilities( this );
 		this.attributeUtils = new WebGLAttributeUtils( this );
 		this.textureUtils = new WebGLTextureUtils( this );
 		this.state = new WebGLState( this );
@@ -51,6 +53,12 @@ class WebGLBackend extends Backend {
 
 	}
 
+	async getArrayBufferAsync( attribute ) {
+
+		return await this.attributeUtils.getArrayBufferAsync( attribute );
+
+	}
+
 	beginRender( renderContext ) {
 
 		const { gl } = this;
@@ -63,7 +71,7 @@ class WebGLBackend extends Backend {
 
 		this._setFramebuffer( renderContext );
 
-		this.clear( renderContext, renderContext.clearColor, renderContext.clearDepth, renderContext.clearStencil );
+		this.clear( renderContext.clearColor, renderContext.clearDepth, renderContext.clearStencil, renderContext );
 
 		//
 
@@ -215,9 +223,18 @@ class WebGLBackend extends Backend {
 
 	}
 
-	clear( renderContext, color, depth, stencil ) {
+	clear( color, depth, stencil, descriptor = null ) {
 
 		const { gl } = this;
+
+		if ( descriptor === null ) {
+
+			descriptor = {
+				textures: null,
+				clearColorValue: this.getClearColor()
+			};
+
+		}
 
 		//
 
@@ -229,11 +246,11 @@ class WebGLBackend extends Backend {
 
 		if ( clear !== 0 ) {
 
-			const clearColor = renderContext.clearColorValue;
+			const clearColor = descriptor.clearColorValue;
 
 			if ( depth ) this.state.setDepthMask( true );
 
-			if ( renderContext.textures === null ) {
+			if ( descriptor.textures === null ) {
 
 				gl.clearColor( clearColor.r, clearColor.g, clearColor.b, clearColor.a );
 				gl.clear( clear );
@@ -242,7 +259,7 @@ class WebGLBackend extends Backend {
 
 				if ( color ) {
 
-					for ( let i = 0; i < renderContext.textures.length; i ++ ) {
+					for ( let i = 0; i < descriptor.textures.length; i ++ ) {
 
 						gl.clearBufferfv( gl.COLOR, i, [ clearColor.r, clearColor.g, clearColor.b, clearColor.a ] );
 
@@ -442,12 +459,6 @@ class WebGLBackend extends Backend {
 
 	}
 
-	destroySampler( /*texture*/ ) {
-
-		console.warn( 'Abstract class.' );
-
-	}
-
 	createDefaultTexture( texture ) {
 
 		const { gl, textureUtils, defaultTextures } = this;
@@ -590,15 +601,22 @@ class WebGLBackend extends Backend {
 
 	}
 
-	destroyTexture( /*texture*/ ) {
+	destroyTexture( texture ) {
 
-		console.warn( 'Abstract class.' );
+		const { gl } = this;
+		const { textureGPU } = this.get( texture );
+
+		gl.deleteTexture( textureGPU );
+
+		this.delete( texture );
 
 	}
 
-	copyTextureToBuffer( /*texture, x, y, width, height*/ ) {
+	destroySampler() {}
 
-		console.warn( 'Abstract class.' );
+	copyTextureToBuffer( texture, x, y, width, height ) {
+
+		return this.textureUtils.copyTextureToBuffer( texture, x, y, width, height );
 
 	}
 
@@ -868,9 +886,15 @@ class WebGLBackend extends Backend {
 
 	}
 
-	hasFeature( name ) {
+	hasFeature( /*name*/ ) {
 
 		return true;
+
+	}
+
+	getMaxAnisotropy() {
+
+		return this.capabilities.getMaxAnisotropy();
 
 	}
 
@@ -919,7 +943,7 @@ class WebGLBackend extends Backend {
 
 		if ( renderContext.textures !== null ) {
 
-			const renderContextData = this.get( renderContext );
+			const renderContextData = this.get( renderContext.renderTarget );
 
 			let fb = renderContextData.framebuffer;
 
